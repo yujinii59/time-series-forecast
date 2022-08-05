@@ -20,11 +20,13 @@ class Pipeline:
         self.sql = Sql()
 
     def run(self):
+        print('Step 1: Initial Setting')
         init = Init(io=self.io, sql=self.sql, path_root=self.path_root)
         init.run(cust_lvl=config.hrchy_cust_lvl, item_lvl=config.hrchy_item_lvl)
 
         load = Load(io=self.io, sql=self.sql, data_vrsn=init.data_vrsn, period=init.period)
         if self.step_cfg['cls_load']:
+            print('Step 2: Loading Data')
             data = load.run()
 
             # Save Step result
@@ -35,6 +37,7 @@ class Pipeline:
             data = self.io.load_object(file_path=init.path['load'], data_type='binary')
 
         if self.step_cfg['cls_proc']:
+            print('Step 3: Preprocessing')
             process = Process(init=init, data=data)
 
             process.process()

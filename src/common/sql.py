@@ -170,12 +170,12 @@ class Sql(object):
                   , ITEM_ATTR04_CD AS ITEM_CD
                   , SALES.ITEM_CD AS SKU_CD
                   , YYMMDD
+                  , WEEK
                   , SEQ
                   , FROM_DC_CD
                   , UNIT_PRICE
                   , UNIT_CD
                   , DISCOUNT
-                  , WEEK
                   , QTY
                   , CREATE_DATE
                FROM (
