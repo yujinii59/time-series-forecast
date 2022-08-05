@@ -1,6 +1,7 @@
 import pandas as pd
 import common.config as config
-from collections import defaultdict
+from typing import Any
+
 
 class Process(object):
     def __init__(self, init, data):
@@ -11,7 +12,10 @@ class Process(object):
         sales_rst = self.reformat_sales_rst(sales_rst=self.data['input'][config.key_sell_in], areas=config.EXG_MAP)
         exg_data = self.split_exg_data(data=self.data['input'][config.key_exg_data])
         merged = self.merge_data(exg=exg_data, sales_rst=sales_rst)
-        hrchy_data = self.set_item_hrchy(data=merged, apply=self.init.hrchy['apply'], lvl=self.init.hrchy['recur_lvl']['total'])
+        hrchy_data = self.set_item_hrchy(data=merged, hrchy_list=self.init.hrchy['apply'],
+                                         lvl=0, max_lvl=self.init.hrchy['recur_lvl']['total'] - 1)
+        resample_data = self.resampling_data(data=hrchy_data, hrchy_list=self.init.hrchy['apply'],
+                                           lvl=0, max_lvl=self.init.hrchy['recur_lvl']['total'] - 1)
 
     def reformat_sales_rst(self, sales_rst: pd.DataFrame, areas: dict) -> pd.DataFrame:
         sales_rst['idx_dtl_cd'] = [areas[cust] for cust in sales_rst['cust_grp_cd']]
@@ -42,25 +46,34 @@ class Process(object):
 
     def merge_data(self, exg: pd.DataFrame, sales_rst: pd.DataFrame) -> pd.DataFrame:
         merged = pd.merge(sales_rst, exg, how='inner', on=['yymmdd', 'idx_dtl_cd'])
+        del merged['idx_dtl_cd']
+
         return merged
 
-    def set_item_hrchy(self, data: pd.DataFrame, apply: list, lvl: int):
-        unique_data = data[apply].drop_duplicates().reset_index()
-        length = len(unique_data)
-        unique_data = unique_data.to_dict()
+    def set_item_hrchy(self, data: pd.DataFrame, hrchy_list: list, lvl: int, max_lvl: int):
+        unique_data = data[hrchy_list[lvl]].unique()
 
-        hrchy = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(pd.DataFrame))))
-        for i in range(length):
-            target = hrchy
-            df = data
-            for j, cd in enumerate(apply):
-                key = unique_data[cd][i]
-                if j == lvl -1:
-                    target[key] = df[df[cd]==key]
-                else:
-                    target = target[key]
-                    df = df[df[cd] == key]
+        hrchy = {}
+        for uniq in unique_data:
+            if lvl < max_lvl:
+                hrchy[uniq] = self.set_item_hrchy(data=data[data[hrchy_list[lvl]] == uniq], hrchy_list=hrchy_list,
+                                                  lvl=lvl + 1, max_lvl=max_lvl)
+
+            else:
+                hrchy[uniq] = data[data[hrchy_list[lvl]] == uniq]
 
         return hrchy
 
+    def resampling_data(self, data: Any, hrchy_list: list, lvl: int, max_lvl: int):
+        group_by_data = {}
+        cols = hrchy_list + ['yymmdd', 'week', 'gsr_sum', 'rhm_avg', 'discount', 'qty']
+        group_cols = hrchy_list + ['yymmdd', 'week', 'gsr_sum', 'rhm_avg']
+        for key, val in data.items():
+            if lvl < max_lvl:
+                group_by_data[key] = self.resampling_data(data=val, hrchy_list=hrchy_list, lvl=lvl + 1, max_lvl=max_lvl)
+            else:
+                tmp: pd.DataFrame = data[key]
+                group_by_data[key] = tmp[cols].groupby(by=group_cols).agg({'discount': 'mean', 'qty': 'sum'})
+                print("")
 
+        return group_by_data
