@@ -13,6 +13,7 @@ class Init(object):
         self.level = {}
         self.hrchy = {}
         self.path = {}
+        self.common = self.io.get_dict_from_db(sql=sql.sql_comm_master(), key='OPTION_CD', val='OPTION_VAL')
 
     def get_data_version(self):
         # from M4S_I110420 table
