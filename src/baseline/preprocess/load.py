@@ -10,11 +10,12 @@ class Load(object):
     외부데이터(날씨)
     """
 
-    def __init__(self, io, sql, data_vrsn, period):
+    def __init__(self, io, sql, data_vrsn, period, common):
         self.io = io
         self.sql = sql
         self.data_vrsn = data_vrsn
         self.period = period
+        self.common = common
         self.key = Key()
 
     def run(self) -> Dict[dict, dict]:

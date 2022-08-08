@@ -24,7 +24,7 @@ class Pipeline:
         init = Init(io=self.io, sql=self.sql, path_root=self.path_root)
         init.run(cust_lvl=config.hrchy_cust_lvl, item_lvl=config.hrchy_item_lvl)
 
-        load = Load(io=self.io, sql=self.sql, data_vrsn=init.data_vrsn, period=init.period)
+        load = Load(io=self.io, sql=self.sql, data_vrsn=init.data_vrsn, period=init.period, common=init.common)
         if self.step_cfg['cls_load']:
             print('Step 2: Loading Data')
             data = load.run()
@@ -40,6 +40,13 @@ class Pipeline:
             print('Step 3: Preprocessing')
             process = Process(init=init, data=data)
 
-            process.process()
+            processed_data = process.process()
+
+            # Save Step result
+            if self.exec_cfg['save_step_yn']:
+                self.io.save_object(data=processed_data, data_type='binary', file_path=init.path['preprocess'])
+        else:
+            processed_data = self.io.load_object(file_path=init.path['preprocess'], data_type='binary')
+
 
         self.io.session.close()

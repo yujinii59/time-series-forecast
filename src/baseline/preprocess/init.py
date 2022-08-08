@@ -15,6 +15,12 @@ class Init(object):
         self.path = {}
         self.common = self.io.get_dict_from_db(sql=sql.sql_comm_master(), key='OPTION_CD', val='OPTION_VAL')
 
+    def run(self, cust_lvl, item_lvl):
+        self.get_data_version()
+        self.set_data_level(cust_lvl=cust_lvl, item_lvl=item_lvl)
+        self.set_hrchy()
+        self.set_path()
+
     def get_data_version(self):
         # from M4S_I110420 table
         data_vrsn_info = self.io.get_df_from_db(sql=self.sql.sql_data_version())
@@ -23,12 +29,6 @@ class Init(object):
             'from': data_vrsn_info['from_date'][0],
             'to': data_vrsn_info['to_date'][0]
         }
-
-    def run(self, cust_lvl, item_lvl):
-        self.get_data_version()
-        self.set_data_level(cust_lvl=cust_lvl, item_lvl=item_lvl)
-        self.set_hrchy()
-        self.set_path()
 
     def set_data_level(self, cust_lvl, item_lvl):
         self.level = {
@@ -72,5 +72,6 @@ class Init(object):
                 path=self.path_root, module='result', data_vrsn=self.data_vrsn, step='midout', extension='pickle'
             )
         }
+
 
 
