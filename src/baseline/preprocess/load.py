@@ -1,6 +1,7 @@
 from common.name import Key
 from typing import Dict
 import pandas as pd
+import os
 
 class Load(object):
     """
@@ -32,7 +33,10 @@ class Load(object):
         calendar_mst = self.io.get_df_from_db(sql=self.sql.sql_calendar())
         sales_matrix = self.io.get_df_from_db(sql=self.sql.sql_sales_matrix())
         model_info = self.io.get_df_from_db(sql=self.sql.sql_algorithm(**{'division': 'FCST'}))
-        hyper_param = self.io.get_df_from_db(sql=self.sql.sql_best_hyper_param_grid())
+        hyper_param = self.io.load_object(
+            file_path=os.path.join('..', '..', 'config', 'grid_search_space_fcst.json'), data_type='json'
+        )
+        best_hyper_param = self.io.get_df_from_db(sql=self.sql.sql_best_hyper_param_grid())
 
         master = {
             self.key.item_mst: item_mst,
@@ -40,7 +44,8 @@ class Load(object):
             self.key.calendar_mst: calendar_mst,
             self.key.sales_matrix: sales_matrix,
             self.key.model: model_info,
-            self.key.hyper_param: hyper_param
+            self.key.hyper_param: hyper_param,
+            self.key.best_hyper_param: best_hyper_param
         }
 
         return master

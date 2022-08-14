@@ -1,5 +1,6 @@
 import common.config as config
 import common.util as util
+from feature_engineering.selection import Selection
 
 from typing import Tuple
 import pandas as pd
@@ -10,16 +11,13 @@ from scipy.stats import mode
 from sklearn.impute import KNNImputer
 
 
-# filtering - threshold 값 기준으로 [몇주차 이하 제외/ 최근 n주차 데이터 없으면 제외(브랜드/SKU)]
-# trimming - 데이터 [0,0,0,0,1,2,5,3,6,7] -> [1,2,5,3,6,7]
-# Outiler - Sigma / Percentage
-# Imputation - 중간중간의 누락 주차 데이터 넣어주는 방법 (median / mod / mean / knn imputation)
-
-
 class Process(object):
     def __init__(self, init, data):
         self.init = init
+        self.start_day = self.init.period['from']
+        self.end_day = self.init.period['to']
         self.data = data
+        self.calendar_data = self.data['master'][config.key_calendar_mst]
         self.common = init.common
         self.hrchy_lvl = self.init.hrchy['recur_lvl']['total'] - 1
         self.item_hrchy_list = self.common['hrchy_item'].split(',')
@@ -33,26 +31,48 @@ class Process(object):
         self.sigma = int(self.common['outlier_sigma'])
         self.percentage = 0.25
         self.imputer = 'mod'
+        self.exg_list = []
+        self.exg_data = pd.DataFrame()
 
     def process(self):
-        sales_rst = self.reformat_sales_rst(sales_rst=self.data['input'][config.key_sell_in], areas=config.EXG_MAP)
+        self.calendar_data = self.set_calendar(start_day=self.start_day, end_day=self.end_day)
 
-        exg_data = self.split_exg_data(data=self.data['input'][config.key_exg_data])
+        sales_rst = self.reformat_sales_rst(sales_rst=self.data['input'][config.key_sell_in])
 
-        grouped = self.grouping_data_by_week(data=sales_rst)
+        sales_rst = self.location_mapping(sales_rst=sales_rst, areas=config.EXG_MAP)
 
-        merged = self.merge_data(exg=exg_data, sales_rst=grouped,
-                                 calendar_data=self.data['master'][config.key_calendar_mst])
+        exg_data, self.exg_list = self.split_exg_data(data=self.data['input'][config.key_exg_data])
 
-        hrchy_data = self.set_item_hrchy(data=merged, hrchy_list=self.hrchy_list, lvl=0, hrchy_lvl=self.hrchy_lvl)
+        self.exg_data = self.merge_cal_data(data=exg_data, calendar_data=self.calendar_data)
 
-        self.set_threshold_yymmdd(common=self.common, calendar_data=self.data['master'][config.key_calendar_mst],
-                                  last_day=self.init.period['to'])
+        self.exg_data = self.grouping_data_by_week(data=self.exg_data)
 
-        preprocessed_data = util.drop_down_hrchy_data(data=hrchy_data, fn=self.preprocessing_data, lvl=0,
-                                                      hrchy_lvl=self.hrchy_lvl)
+        merged = self.merge_exg_data(data=sales_rst, exg=exg_data)
 
-        return preprocessed_data
+        merged = self.merge_cal_data(data=merged, calendar_data=self.calendar_data)
+
+        sales_rst = self.grouping_data_by_week(data=merged)
+
+        selection = Selection(exg_list=self.exg_list)
+        feature_selected, self.exg_list = selection.selection(data=sales_rst)
+
+        hrchy_data = self.set_item_hrchy(data=feature_selected, hrchy_list=self.hrchy_list, lvl=0,
+                                         hrchy_lvl=self.hrchy_lvl)
+
+        self.set_threshold_yymmdd(common=self.common, calendar_data=self.calendar_data,
+                                  last_day=self.end_day)
+
+        preprocessed_data, hrchy_cnt = util.drop_down_hrchy_data(data=hrchy_data, fn=self.preprocessing_data, lvl=0,
+                                                                 hrchy_lvl=self.hrchy_lvl)
+
+        return preprocessed_data, self.exg_list, hrchy_cnt
+
+    def set_calendar(self, start_day, end_day):
+        calendar_data = self.calendar_data
+        calendar_data = calendar_data[calendar_data['yymmdd'] >= start_day]
+        calendar_data = calendar_data[calendar_data['yymmdd'] <= end_day]
+
+        return calendar_data
 
     def set_threshold_yymmdd(self, common: dict, calendar_data: pd.DataFrame, last_day: str):
         last_day = last_day
@@ -69,19 +89,26 @@ class Process(object):
         self.threshold_sku_recent = threshold_sku_yymmdd[0]
 
     @staticmethod
-    def reformat_sales_rst(sales_rst: pd.DataFrame, areas: dict) -> pd.DataFrame:
+    def reformat_sales_rst(sales_rst: pd.DataFrame) -> pd.DataFrame:
         reformat_data = deepcopy(sales_rst)
-        reformat_data['idx_dtl_cd'] = [areas[cust] for cust in reformat_data['cust_grp_cd']]
         reformat_data = reformat_data.drop(
             columns=['division_cd', 'seq', 'from_dc_cd', 'unit_price', 'unit_cd', 'create_date'])
 
         return reformat_data
 
     @staticmethod
-    def split_exg_data(data: pd.DataFrame) -> pd.DataFrame:
+    def location_mapping(sales_rst: pd.DataFrame, areas: dict) -> pd.DataFrame:
+        mapping_data = deepcopy(sales_rst)
+        mapping_data['idx_dtl_cd'] = [areas[cust] for cust in mapping_data['cust_grp_cd']]
+
+        return mapping_data
+
+    def split_exg_data(self, data: pd.DataFrame) -> Tuple[pd.DataFrame, list]:
         idx_cd = data['idx_cd'].unique()
+        exg_list = []
         split_data = pd.DataFrame()
         for idx in idx_cd:
+            exg_list.append(idx.lower())
             if len(split_data) == 0:
                 split_data = data[data['idx_cd'] == idx]
                 split_data = split_data.rename(columns={'ref_val': idx.lower()})
@@ -92,17 +119,7 @@ class Process(object):
                 split_data_tmp = split_data_tmp.drop(columns='idx_cd')
                 split_data = pd.merge(split_data, split_data_tmp, how='inner', on=['idx_dtl_cd', 'yymmdd'])
 
-        return split_data
-
-    @staticmethod
-    def merge_data(exg: pd.DataFrame, sales_rst: pd.DataFrame, calendar_data: pd.DataFrame) -> pd.DataFrame:
-        merged = pd.merge(sales_rst, exg, how='inner', on=['yymmdd', 'idx_dtl_cd'])
-        merged = merged.drop(columns=['idx_dtl_cd'])
-        merged = pd.merge(merged, calendar_data[['yymmdd', 'start_week_day']], how='inner', on='yymmdd')
-        merged = merged.drop(columns=['yymmdd'])
-        merged = merged.rename(columns={'start_week_day': 'yymmdd'})
-
-        return merged
+        return split_data, exg_list
 
     @staticmethod
     def needed_columns(columns: list, avg_col: list, sum_col: list) -> Tuple[dict, list]:
@@ -125,13 +142,31 @@ class Process(object):
         avg_col, sum_col = self.avg_col, self.sum_col
         columns = data.columns.tolist()
         agg_dic, groupby_col = self.needed_columns(columns=columns, avg_col=avg_col, sum_col=sum_col)
-        groupby_col.remove('yymmdd')
-        agg_dic['yymmdd'] = 'min'
+
         grouping_data = deepcopy(data)
         grouping_data = grouping_data.groupby(by=groupby_col).agg(agg_dic)
         grouping_data = grouping_data.reset_index()
 
         return grouping_data
+
+    @staticmethod
+    def merge_exg_data(data: pd.DataFrame, exg: pd.DataFrame) -> pd.DataFrame:
+        merged = pd.merge(data, exg, how='inner', on=['yymmdd', 'idx_dtl_cd'])
+        merged = merged.drop(columns=['idx_dtl_cd'])
+
+        return merged
+
+    @staticmethod
+    def merge_cal_data(data: pd.DataFrame, calendar_data: pd.DataFrame) -> pd.DataFrame:
+        if 'week' in data.columns:
+            merged = pd.merge(data, calendar_data[['yymmdd', 'start_week_day']], how='inner', on='yymmdd')
+        else:
+            merged = pd.merge(data, calendar_data[['yymmdd', 'week', 'start_week_day']], how='inner', on='yymmdd')
+
+        merged = merged.drop(columns=['yymmdd'])
+        merged = merged.rename(columns={'start_week_day': 'yymmdd'})
+
+        return merged
 
     def set_item_hrchy(self, data: pd.DataFrame, hrchy_list: list, lvl: int, hrchy_lvl: int):
         unique_data = data[hrchy_list[lvl]].unique()
@@ -152,11 +187,19 @@ class Process(object):
 
         filtered_data = self.filtering_data(data=data_tmp, hrchy_list=self.item_hrchy_list)
 
+        if not len(filtered_data):
+            return filtered_data
+
         resampled_data = self.resampling_data(data=filtered_data)
 
         filtered_data = self.filtering_data(data=resampled_data, hrchy_list=self.hrchy_list)
 
-        trimmed_data = self.trimming_data(data=filtered_data)
+        if not len(filtered_data):
+            return filtered_data
+
+        fill_zero_data = self.fill_zero(data=filtered_data)
+
+        trimmed_data = self.trimming_data(data=fill_zero_data)
 
         cleansed_data = self.outlier_setting(data=trimmed_data)
 
@@ -221,9 +264,43 @@ class Process(object):
 
         return filtered_data
 
+    def fill_zero(self, data: pd.DataFrame):
+        fill_zero_data = deepcopy(data)
+        fill_zero_data = fill_zero_data.drop(columns=self.exg_list)
+        fill_data = fill_zero_data.loc[0]
+        idx_dtl_cd = config.EXG_MAP[fill_data['cust_grp_cd']]
+        exg_data = self.exg_data[self.exg_data['idx_dtl_cd'] == idx_dtl_cd]
+        exg_data = exg_data.drop(columns='idx_dtl_cd')
+        exg_data = exg_data.sort_values(by='yymmdd')
+        for hrchy in self.hrchy_list:
+            exg_data[hrchy] = fill_data[hrchy]
+
+        fill_zero_data = pd.merge(fill_zero_data, exg_data, how='right', on=['yymmdd','week'] + self.hrchy_list)
+        fill_zero_data = fill_zero_data.fillna(0)
+
+        return fill_zero_data
+
+    def fill_zero_tmp(self, data: pd.DataFrame):
+        fill_zero_data = deepcopy(data)
+        yymmdd = data['yymmdd']
+        fill_data = data.loc[0]
+        cal = self.calendar_data[['start_week_day', 'week']].drop_duplicates().reset_index(drop=True)
+        l = len(cal)
+        for i in range(l):
+            date = cal['start_week_day'][i]
+            week = cal['week'][i]
+            if date not in yymmdd.values:
+                fill_data['yymmdd'] = date
+                fill_data['week'] = week
+                fill_data['qty'] = 0
+                fill_data['discount'] = 0
+                fill_zero_data = fill_zero_data.append(fill_data, ignore_index=True)
+
+        return fill_zero_data
+
     @staticmethod
     def trimming_data(data: pd.DataFrame) -> pd.DataFrame:
-        trimmed_data = data.copy()
+        trimmed_data = deepcopy(data)
         trimmed_data = trimmed_data.iloc[np.trim_zeros(filt=trimmed_data['qty'], trim='f').index.tolist()]
 
         return trimmed_data

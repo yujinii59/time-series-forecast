@@ -498,7 +498,7 @@ class Sql(object):
               FROM M4S_I103011
              WHERE PROJECT_CD = '{kwargs['project_cd']}'
                AND STAT_CD = '{kwargs['stat_cd']}'
-               AND OPTION_CD = '{kwargs['option_cd']}'
+               AND OPTION_CD IN {kwargs['option_cd']}
         """
         return sql
 

@@ -10,4 +10,5 @@ class Key(object):
         self.model = config.key_model
         self.hyper_param = config.key_hyper_param
         self.sell_in = config.key_sell_in
-        self.exg_data= config.key_exg_data
+        self.exg_data = config.key_exg_data
+        self.best_hyper_param = config.key_best_hyper_param

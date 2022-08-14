@@ -11,14 +11,17 @@ def make_path(path, module, step, data_vrsn, extension):
     return file_path
 
 
-def drop_down_hrchy_data(data, fn=None, lvl=0, hrchy_lvl=3):
+def drop_down_hrchy_data(data, fn=None, lvl=0, hrchy_lvl=3, cnt=0):
     hrchy_data = {}
     for key, val in data.items():
         if lvl < hrchy_lvl:
-            hrchy_data[key] = drop_down_hrchy_data(data=val, fn=fn,
-                                                   lvl=lvl+1, hrchy_lvl=hrchy_lvl)
+            hrchy_data[key], cnt = drop_down_hrchy_data(data=val, fn=fn,
+                                                   lvl=lvl+1, hrchy_lvl=hrchy_lvl, cnt=cnt)
 
         else:
-            hrchy_data[key] = fn(data=val)
+            data = fn(data=val)
+            cnt += len(data)
+            if len(data):
+                hrchy_data[key] = data
 
-    return hrchy_data
+    return hrchy_data, cnt
