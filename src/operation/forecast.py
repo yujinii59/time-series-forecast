@@ -9,8 +9,8 @@ data_cfg = {'division': 'SELL_IN'}
 
 # Execute Configuration
 step_cfg = {
-    'cls_load': False,
-    'cls_cns': False,    # consistency check
+    'cls_load': True,
+    # 'cls_cns': False,    # consistency check
     'cls_proc': True,
     'cls_train': True,
     'cls_pred': True,

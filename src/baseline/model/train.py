@@ -4,7 +4,7 @@ from baseline.model.algorithm import Algorithm
 
 import numpy as np
 import pandas as pd
-from typing import Any
+from copy import deepcopy
 from itertools import product
 
 
@@ -25,6 +25,7 @@ class Train(object):
         self.data = data
         self.init = init
         self.hrchy_lvl = self.init.hrchy['recur_lvl']['total']
+        self.hrchy_list = self.init.hrchy['apply'] + ['yymmdd', 'week']
         self.common = common
         self.mst_info = mst_info
         self.models = mst_info[config.key_model]
@@ -40,9 +41,14 @@ class Train(object):
         estimate_result = {}
         for i, models in self.models.iterrows():
             model = models['model']
-            feat = feature[models['variate']]
-            train, test = self.train_test_split(feature=feat, eval_width=models['eval_width'],
-                                                label_width=models['label_width'])
+            variate = models['variate']
+            train, test = self.train_test_split(
+                feature=feature[variate],
+                variate=variate,
+                eval_width=models['eval_width'],
+                label_width=models['label_width']
+            )
+
             estimate_result[model] = self.estimate_target_week(
                 model=model,
                 cfg=self.mst_info[config.key_hyper_param][model],
@@ -54,10 +60,13 @@ class Train(object):
         estimate_result['voting'] = sum(list(estimate_result.values())) / len(estimate_result)
         estimate_result = sorted(estimate_result.items(), key=lambda x: x[1])
 
+        return estimate_result[0][0]
+
     def feature_setting(self, data: pd.DataFrame):
         seq = data['qty'].to_numpy()
-        col = data.columns[self.hrchy_lvl:]
-        multi = data[col].to_numpy()
+        tmp = deepcopy(data)
+        tmp = tmp.drop(columns=self.hrchy_list)
+        multi = tmp.to_numpy()
         feature = {
             'univ': seq,
             'multi': {
@@ -69,8 +78,8 @@ class Train(object):
         return feature
 
     @staticmethod
-    def train_test_split(feature: np.array, eval_width: int, label_width: int):
-        if len(feature.shape) == 1:
+    def train_test_split(feature: dict, variate: str, eval_width: int, label_width: int):
+        if variate == 'univ':
             train = feature[:-eval_width]
             test = feature[-label_width:]
         else:
@@ -82,12 +91,15 @@ class Train(object):
 
         return train, test
 
-    def estimate_target_week(self, model: str, cfg: dict, eval_width: int, train: Any, test: pd.Series):
+    def estimate_target_week(self, model: str, cfg: dict, eval_width: int, train: np.array, test: np.array):
         cases = self.grid_search_func(cfg=cfg)
         min_rmse = int(1e9)
         min_case = {}
         for case in cases:
             rst = self.estimators[model](history=train, cfg=case, pred_step=eval_width)
+            if rst is None:
+                continue
+
             rmse = self.calculate_rmse(estimate=rst, test=test)
             if min_rmse > rmse:
                 min_rmse = rmse
@@ -137,5 +149,3 @@ class Train(object):
         df['PROJECT_CD'] = 'ENT001'
         df['STAT_CD'] = model.upper()
         self.io.insert_to_db(df=df, tb_name='M4S_I103011')
-
-        print("")

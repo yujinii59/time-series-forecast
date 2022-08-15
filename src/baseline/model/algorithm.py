@@ -100,11 +100,13 @@ class Algorithm(object):
         :param pred_step: prediction steps
         :return: forecast result
         """
+
         # define model
         order = (ast.literal_eval(cfg['p']), ast.literal_eval(cfg['d']), ast.literal_eval(cfg['q']))
-        model = ARIMA(history, order=order, trend=cfg['trend'], freq=ast.literal_eval(cfg['freq']))
 
         try:
+            model = ARIMA(history, order=order, trend=cfg['trend'], freq=ast.literal_eval(cfg['freq']))
+
             # fit model
             model_fit = model.fit()
 
@@ -113,31 +115,6 @@ class Algorithm(object):
 
         except ValueError:
             yhat = None
-
-        return yhat
-
-    @staticmethod
-    def ses(history, cfg: dict, pred_step=1):
-        """
-        :param history: time series history (Pandas Series)
-            index: weekly dates
-            data: Sales quantity
-        :param cfg:
-            initialization_method: None, 'estimated', 'heuristic', 'legacy-heuristic', 'known'
-                - Method for initialize the recursions
-            smoothing_level: smoothing level (float)
-            optimized: optimized not (bool)
-        :param pred_step: prediction steps
-        :return: forecast result
-        """
-        # define model
-        model = SimpleExpSmoothing(history, initialization_method=cfg['initialization_method'])
-
-        # fit model
-        model_fit = model.fit(smoothing_level=cfg['smoothing_level'], optimized=cfg['optimized'])  # fit model
-
-        # Make multi-step forecast
-        yhat = model_fit.predict(start=len(history), end=len(history) + pred_step - 1)
 
         return yhat
 
@@ -168,25 +145,29 @@ class Algorithm(object):
         :return: forecast result
         """
         # define model
-        model = ExponentialSmoothing(history, trend=cfg['trend'],
-                                     damped_trend=bool(cfg['damped_trend']),
-                                     seasonal=cfg['seasonal'],
-                                     seasonal_periods=ast.literal_eval(cfg['seasonal_period']))
+        try:
+            model = ExponentialSmoothing(history, trend=cfg['trend'],
+                                         damped_trend=bool(cfg['damped_trend']),
+                                         seasonal=cfg['seasonal'],
+                                         seasonal_periods=ast.literal_eval(cfg['seasonal_period']))
 
-        # fit model
-        model_fit = model.fit(
-            smoothing_level=float(cfg['alpha']),
-            smoothing_trend=float(cfg['beta']),
-            smoothing_seasonal=float(cfg['gamma']),
-            optimized=True,
-            remove_bias=bool(cfg['remove_bias'])
-        )
+            # fit model
+            model_fit = model.fit(
+                smoothing_level=float(cfg['alpha']),
+                smoothing_trend=float(cfg['beta']),
+                smoothing_seasonal=float(cfg['gamma']),
+                optimized=True,
+                remove_bias=bool(cfg['remove_bias'])
+            )
 
-        # Make multi-step forecast
-        yhat = model_fit.forecast(steps=pred_step)
+            # Make multi-step forecast
+            yhat = model_fit.forecast(steps=pred_step)
 
-        # Convert nan values to zeros
-        yhat = yhat.fillna(0)
+        except ValueError:
+            yhat = None
+
+        # # Convert nan values to zeros
+        # yhat = yhat.fillna(0)
 
         return yhat
 
@@ -272,7 +253,7 @@ class Algorithm(object):
 
         # fit model
         model_fit = model.fit(maxlags=ast.literal_eval(cfg['maxlags']),
-                              ic=ast.literal_eval(cfg['ic']), trend=cfg['trend'])
+                              ic=cfg['ic'], trend=cfg['trend'])
 
         # Make multi-step forecast
         yhat = model_fit.forecast(y=data, steps=pred_step)
@@ -353,14 +334,18 @@ class Algorithm(object):
                           ast.literal_eval(cfg['ssn_s']))
 
         # define model
-        model = SARIMAX(endog=history['endog'], exog=history['exog'],
-                        order=order, seasonal_order=seasonal_order, trend=cfg['trend'])
+        try:
+            model = SARIMAX(endog=history['endog'], exog=history['exog'],
+                            order=order, seasonal_order=seasonal_order, trend=cfg['trend'])
 
-        # fit model
-        model_fit = model.fit(disp=False)
+            # fit model
+            model_fit = model.fit(disp=False)
 
-        # Make multi-step forecast
-        yhat = model_fit.forecast(steps=pred_step, exog=[history['exog'][-1]] * pred_step)
+            # Make multi-step forecast
+            yhat = model_fit.forecast(steps=pred_step, exog=[history['exog'][-1]] * pred_step)
+
+        except ValueError:
+            yhat = None
 
         return yhat
 
@@ -380,10 +365,11 @@ class Algorithm(object):
         train = pd.DataFrame({'ds': history.index, 'y': history.values})
         _ = cfg
 
-        model = Prophet(
-            weekly_seasonality=True,
-            daily_seasonality=False,
-        )
+        try:
+            model = Prophet(
+                weekly_seasonality=True,
+                daily_seasonality=False,
+            )
 
         # model = Prophet(
         #     changepoint_prior_scale=cfg['changepoint_prior_scale'],
@@ -394,7 +380,6 @@ class Algorithm(object):
         # )
 
         # fit model
-        try:
             model.fit(train)
 
             # forecast
