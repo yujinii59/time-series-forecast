@@ -19,7 +19,7 @@ class Train(object):
         'prophet': Algorithm.prophet
     }
 
-    def __init__(self, io, sql, data, init, common, mst_info, exg_list, hrchy_cnt):
+    def __init__(self, io, sql, data, init, common, mst_info, exg_list):
         self.io = io
         self.sql = sql
         self.data = data
@@ -30,26 +30,26 @@ class Train(object):
         self.mst_info = mst_info
         self.models = mst_info[config.key_model]
         self.exg_list = exg_list
-        self.hrchy_cnt = hrchy_cnt
 
     def training(self):
-        models = util.drop_down_hrchy_data(data=self.data, fn=self.train_model, lvl=0, hrchy_lvl=self.hrchy_lvl - 1,
+        models, _ = util.drop_down_hrchy_data(data=self.data, fn=self.train_model, lvl=0, hrchy_lvl=self.hrchy_lvl - 1,
                                            cnt=0)
+        return models
 
     def train_model(self, data: pd.DataFrame):
         feature = self.feature_setting(data=data)
         estimate_result = {}
+        estimate_hyperparam = {}
         for i, models in self.models.iterrows():
             model = models['model']
             variate = models['variate']
             train, test = self.train_test_split(
                 feature=feature[variate],
                 variate=variate,
-                eval_width=models['eval_width'],
-                label_width=models['label_width']
+                eval_width=models['eval_width']
             )
 
-            estimate_result[model] = self.estimate_target_week(
+            estimate_result[model], estimate_hyperparam[model] = self.estimate_target_week(
                 model=model,
                 cfg=self.mst_info[config.key_hyper_param][model],
                 eval_width=models['eval_width'],
@@ -57,10 +57,12 @@ class Train(object):
                 test=test
             )
 
-        estimate_result['voting'] = sum(list(estimate_result.values())) / len(estimate_result)
+        estimate_result['voting'] = round(sum(list(estimate_result.values())) / len(estimate_result), 3)
         estimate_result = sorted(estimate_result.items(), key=lambda x: x[1])
 
-        return estimate_result[0][0]
+        model = estimate_result[0][0]
+        hyperparam = estimate_hyperparam[model]
+        return model, hyperparam
 
     def feature_setting(self, data: pd.DataFrame):
         seq = data['qty'].to_numpy()
@@ -78,16 +80,16 @@ class Train(object):
         return feature
 
     @staticmethod
-    def train_test_split(feature: dict, variate: str, eval_width: int, label_width: int):
+    def train_test_split(feature: dict, variate: str, eval_width: int):
         if variate == 'univ':
             train = feature[:-eval_width]
-            test = feature[-label_width:]
+            test = feature[-eval_width:]
         else:
             train = {
                 'exog': feature['exog'][:-eval_width],
                 'endog': feature['endog'][:-eval_width]
             }
-            test = feature['endog'][-label_width:]
+            test = feature['endog'][-eval_width:]
 
         return train, test
 
@@ -107,7 +109,7 @@ class Train(object):
 
         self.save_hyper_params(model=model, hyper_param=min_case)
 
-        return min_rmse
+        return min_rmse, min_case
 
     @staticmethod
     def grid_search_func(cfg: dict):
@@ -132,7 +134,7 @@ class Train(object):
         for esti, tgt in zip(estimate, test):
             ms += (tgt - esti) ** 2
 
-        rmse = (ms / l) ** 0.5
+        rmse = round((ms / l) ** 0.5, 3)
 
         return rmse
 

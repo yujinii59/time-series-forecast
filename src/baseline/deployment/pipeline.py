@@ -2,6 +2,7 @@ from baseline.preprocess.init import Init
 from baseline.preprocess.load import Load
 from baseline.preprocess.proc import Process
 from baseline.model.train import Train
+from baseline.model.predict import Predict
 from common.sql import Sql
 from dao.DataIO import DataIO
 import common.config as config
@@ -52,10 +53,36 @@ class Pipeline:
                                                                       data_type='binary')
 
         if self.step_cfg['cls_train']:
-            print('Step 4: Training')
-            train = Train(io=self.io, sql=self.sql, data=processed_data, init=init, common=init.common, mst_info=load_data['master'],
-                          exg_list=exg_list, hrchy_cnt=hrchy_cnt)
+            print('Step 4: Evaluation')
+            train = Train(io=self.io,
+                          sql=self.sql,
+                          data=processed_data,
+                          init=init,
+                          common=init.common,
+                          mst_info=load_data['master'],
+                          exg_list=exg_list
+                        )
 
-            train.training()
+            models = train.training()
+
+            # Save Step result
+            if self.exec_cfg['save_step_yn']:
+                self.io.save_object(data=models, data_type='binary', file_path=init.path['train'])
+        else:
+            models = self.io.load_object(file_path=init.path['train'], data_type='binary')
+
+        if self.step_cfg['cls_pred']:
+            print('Step5: Prediction')
+            pred = Predict(io=self.io,
+                           sql=self.sql,
+                           init=init,
+                           common=init.common,
+                           data=processed_data,
+                           models=models,
+                           mst_info=load_data['master'],
+                           exg_list=exg_list
+                        )
+
+            prediction = pred.predict()
 
         self.io.session.close()

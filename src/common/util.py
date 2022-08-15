@@ -16,7 +16,7 @@ def drop_down_hrchy_data(data, fn=None, lvl=0, hrchy_lvl=3, cnt=0):
     for key, val in data.items():
         if lvl < hrchy_lvl:
             hrchy_data[key], cnt = drop_down_hrchy_data(data=val, fn=fn,
-                                                   lvl=lvl+1, hrchy_lvl=hrchy_lvl, cnt=cnt)
+                                                        lvl=lvl + 1, hrchy_lvl=hrchy_lvl, cnt=cnt)
 
         else:
             data = fn(data=val)
@@ -25,3 +25,27 @@ def drop_down_hrchy_data(data, fn=None, lvl=0, hrchy_lvl=3, cnt=0):
                 hrchy_data[key] = data
 
     return hrchy_data, cnt
+
+
+def drop_down_hrchy_data_model(data, models, hrchy=[], fn=None, lvl=0, hrchy_lvl=3):
+    hrchy_data = {}
+    for key, val in data.items():
+        models_val = models[key]
+        hrchy_tmp = hrchy.copy()
+        hrchy_tmp.append(key)
+        if lvl < hrchy_lvl:
+            hrchy_data[key] = drop_down_hrchy_data_model(
+                                                              data=val,
+                                                              models=models_val,
+                                                              hrchy=hrchy_tmp,
+                                                              fn=fn,
+                                                              lvl=lvl + 1,
+                                                              hrchy_lvl=hrchy_lvl
+                                                              )
+
+        else:
+            data = fn(data=val, model=models_val, hrchy=hrchy_tmp)
+            if len(data):
+                hrchy_data[key] = data
+
+    return hrchy_data
